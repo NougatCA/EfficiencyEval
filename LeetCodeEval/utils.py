@@ -1,0 +1,65 @@
+import signal
+import time
+import logging
+
+import openai
+from openai.types.chat import ChatCompletion
+
+logger = logging.getLogger("my_logger")
+
+
+def make_request(
+    client: openai.Client,
+    message: str,
+    model: str,
+    max_tokens: int = 512,
+    temperature: float = 1,
+    n: int = 1,
+    **kwargs
+) -> ChatCompletion:
+    return client.chat.completions.create(
+        model=model,
+        messages=[
+            {
+                "role": "system",
+                "content": "You are a helpful assistant designed to output JSON." if model == "gpt-4-1106-preview" else "You are a helpful assistant.",
+            },
+            {"role": "user", "content": message},
+        ],
+        max_tokens=max_tokens,
+        temperature=temperature,
+        n=n,
+        **kwargs
+    )
+
+
+def handler(signum, frame):
+    # swallow signum and frame
+    raise Exception("end of time")
+
+
+def make_auto_request(*args, **kwargs) -> ChatCompletion:
+    ret = None
+    while ret is None:
+        try:
+            signal.signal(signal.SIGALRM, handler)
+            signal.alarm(100)
+            ret = make_request(*args, **kwargs)
+            signal.alarm(0)
+        except openai.RateLimitError:
+            logger.warning("Rate limit exceeded. Waiting...")
+            signal.alarm(0)
+            time.sleep(5)
+        except openai.APIConnectionError:
+            logger.warning("API connection error. Waiting...")
+            signal.alarm(0)
+            time.sleep(5)
+        except openai.APIError as e:
+            logger.warning(e)
+            signal.alarm(0)
+        except Exception as e:
+            logger.warning("Unknown error. Waiting...")
+            logger.warning(e)
+            signal.alarm(0)
+            time.sleep(1)
+    return ret
